@@ -3,7 +3,9 @@
 
 
 import logging
+from typing import Optional
 from kovot.mod import ModManager
+from kovot.message import Message
 
 
 # Kovot
@@ -42,7 +44,7 @@ class Bot:
         # debug
         self.module_manager.show_mods()
 
-    def talk(self, message):
+    def talk(self, message) -> Optional[Message]:
         message = self.preprocessor.transform(message)
 
         # get responses from mods
@@ -54,6 +56,10 @@ class Bot:
                                                           num=10)
         postprocessed_reponses = [self.postprocessor.transform(res)
                                   for res in selected_resposes]
+
+        if len(postprocessed_reponses) == 0:
+            logging.warn("### no answer candidate ###")
+            return None
 
         # log
         logging.info("### answer candidates ###")
@@ -72,4 +78,5 @@ class Bot:
 
         for message in stream:
             res = self.talk(message)
-            stream.post(res)
+            if res is not None:
+                stream.post(res)
