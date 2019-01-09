@@ -7,7 +7,7 @@ from collections import OrderedDict
 from queue import Queue
 from kovot import Message, Response, Speaker
 from logging import Logger
-from typing import Iterator, List, Tuple
+from typing import Iterator, List, Tuple, Optional, Union
 __all__ = ['Mastodon']
 
 TOOT_LIMIT: int = 500
@@ -33,8 +33,36 @@ class Mastodon(collections.abc.Iterable):
             client_secret: str,
             access_token: str,
             api_base_url: str,
+            visibility: Optional[str] = None,
+            spoiler_text: Optional[str] = None,
+            tags: Union[str, List[str]] = [],
             reply_everyone: bool = False
     ):
+        """Create a new stream object for communicating on Mastodon.
+
+        Parameters
+        ----------
+        logger : logging.Logger
+            A logger object receiving messages from this object.
+        client_id : str
+            A client key for accessing Mastodon API.
+        client_secret : str
+            A client secret for accessing Mastodon API.
+        access_token : str
+            An access token for accessing Mastodon API.
+        api_base_url : str
+            The hostname of your accessing Mastodon instance.
+        visibility : str
+            You can choose 'public', 'unlisted', 'private', or 'direct' for this parameter.
+            By default, it will be chosen the default privacy setting of the used account.
+            For bot use, we strongly recommend 'unlisted' or stronger restriction than it for this option due to considering the effect of bot's posts on the Fediverse.
+        spoiler_text : str
+            A warning message of posts submitted by this bot.
+        tags : str
+            Hashtags attached to the posts submitted by this bot.
+        reply_everyone : bool
+            If this option is True, the bot will reply to everyone who is mentioned.
+        """
         self.logger = logger
         self.api = MastodonAPI(
             client_id,
@@ -43,6 +71,12 @@ class Mastodon(collections.abc.Iterable):
             api_base_url
         )
         self.myself = self.api.account_verify_credentials()
+        self.visibility = visibility
+        self.spoiler_text = spoiler_text
+        if isinstance(tags, str):
+            self.tags = [tags]
+        else:
+            self.tags = tags
         self.reply_everyone = reply_everyone
         self._cached = dict()
 
@@ -61,14 +95,19 @@ class Mastodon(collections.abc.Iterable):
                     if user['id'] != self.myself['id']:
                         response.text = '@%s %s' % (user['acct'], response.text)
             response.text = '@%s %s' % (in_reply_to['account']['acct'], response.text)
+        for tag in self.tags:
+            if tag[0] == '#':
+                response.text += ' ' + tag
+            else:
+                response.text += ' #' + tag
         if len(response.text) > TOOT_LIMIT:
             self.logger.error('Length of given status has exceeded the limit: %d' % len(response.text))
             return False
         try:
             if response.message is None:
-                result = self.api.status_post(response.text)
+                result = self.api.status_post(response.text, visibility=self.visibility, spoiler_text=self.spoiler_text)
             else:
-                result = self.api.status_post(response.text, in_reply_to_id=response.message.id_)
+                result = self.api.status_post(response.text, in_reply_to_id=response.message.id_, visibility=self.visibility, spoiler_text=self.spoiler_text)
             self.logger.info('Updated: ' + str(result))
         except MastodonError:
             self.logger.error('An API error has occured.')
